@@ -21,7 +21,7 @@ export class OstiumVolumeBot {
         this.wallet = new ethers.Wallet(process.env.PRIVATE_KEY!, this.provider);
 
         this.contract = new ethers.Contract(
-            process.env.OSTIUM_CONTRACT!,
+            process.env.OSTIUM_CONTRACT!, // 0x6D0bA1f9996DBD8885827e1b2e8f6593e7702411 ( add cái này vô OSTIUM_CONTRACT trong file config.ts)
             OSTIUM_ABI,
             this.wallet
         );
