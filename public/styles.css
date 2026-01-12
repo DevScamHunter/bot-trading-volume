@@ -1,0 +1,90 @@
+body {
+  font-family: "Roboto Mono", monospace;
+  background-color: #121212;
+  color: #00ff90;
+  margin: 0;
+  padding: 20px;
+}
+
+h1 {
+  color: #00bfff;
+  font-size: 2rem;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.stats {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.stats .stat-card {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+  min-width: 180px;
+  flex: 1 1 180px;
+  text-align: center;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  transition: transform 0.2s ease;
+}
+.stats .stat-card:hover {
+  transform: scale(1.05);
+}
+.stats .stat-card .label {
+  font-size: 0.9rem;
+  color: rgb(153, 255, 210.6);
+}
+.stats .stat-card .value {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-top: 4px;
+}
+
+.pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pairs .pair-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+  transition: background 0.2s ease;
+}
+.pairs .pair-card:hover {
+  background-color: rgb(17.25, 17.25, 17.25);
+}
+.pairs .pair-card .pair-name {
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+.pairs .pair-card .pair-volume {
+  font-size: 1.1rem;
+}
+.pairs .pair-card .pair-volume.up {
+  color: #0f0;
+  animation: pulse 1s infinite;
+}
+.pairs .pair-card .pair-volume.down {
+  color: #f00;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/*# sourceMappingURL=styles.css.map */

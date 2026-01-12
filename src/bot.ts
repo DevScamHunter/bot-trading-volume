@@ -14,9 +14,12 @@ export class OstiumVolumeBot {
 
     // ===== New: store USDC info =====
     private initialUsdcBalance = 0;
+    private initialEthBalance = 0;
     private volumeByPair: Record<string, number> = {};
+    usdcBalance: any;
+    ethBalance: any;
 
-    constructor() {
+    constructor(private options?: { onUpdate?: (data: any) => void }, private mock = true) {
         this.provider = new ethers.JsonRpcProvider(process.env.ARB_RPC);
         this.wallet = new ethers.Wallet(process.env.PRIVATE_KEY!, this.provider);
 
@@ -32,28 +35,96 @@ export class OstiumVolumeBot {
             this.wallet
         );
     }
+    private async updateDashboard() {
+        if (this.options?.onUpdate) {
+            let usdcBalance = Number(ethers.formatUnits(await this.usdc.balanceOf(this.wallet.address), 6));
+            let ethBalance = Number(ethers.formatEther(await this.provider.getBalance(this.wallet.address)));
 
+            this.options.onUpdate({
+                tradeCount: this.tradeCount,
+                totalVolumeUsd: this.totalVolumeUsd,
+                volumeByPair: this.volumeByPair,
+                usdcInitial: this.initialUsdcBalance,
+                ethInitial: this.initialEthBalance,
+                usdc: usdcBalance,
+                eth: ethBalance,
+            });
+        }
+    }
     async start() {
-        console.log(' OSTIUM LONG VOLUME BOT STARTED');
+        console.log('OSTIUM LONG VOLUME BOT STARTED');
 
-        // ===== Lấy USDC ban đầu =====
-        this.initialUsdcBalance = Number(
-            ethers.formatUnits(await this.usdc.balanceOf(this.wallet.address), 6)
-        );
-        console.log('USDC ban đầu:', this.initialUsdcBalance);
+        if (this.mock) {
+            // ===== MOCK =====
+            await this.runMockLoop();
+        } else {
+            // ===== REAL =====
+            await this.runRealBot();
+        }
+    }
+    private async runMockLoop() {
+        // mock init
+        this.tradeCount = 3;
+        this.totalVolumeUsd = 1500;
+        this.volumeByPair = { 'BTC/USD': 800, 'ETH/USD': 700 };
 
-        await this.checkEthBalance();
-        await this.approveUsdc();
+        // mock số dư
+        const mockUsdcInitial = 1000;
+        const mockEthInitial = 0.05;
+
+        // gán cho các property lưu lại ban đầu
+        this.initialUsdcBalance = mockUsdcInitial;
+        this.ethBalance = mockEthInitial;
+
+        // gửi lần đầu cho dashboard
+        this.updateDashboardMock(mockUsdcInitial, mockEthInitial);
 
         while (this.running) {
+            await this.sleep(5000);
+
+            // tăng dần trade + volume
+            this.tradeCount++;
+            this.totalVolumeUsd += 500;
+            this.volumeByPair['BTC/USD'] += 300;
+            this.volumeByPair['ETH/USD'] += 200;
+
+            // giả lập số dư giảm (ví dụ trừ đi tổng volume USD/ETH tương ứng)
+            const currentUsdc = mockUsdcInitial - this.totalVolumeUsd * 0.5 / 1000; // tuỳ mock logic
+            const currentEth = mockEthInitial - 0.001; // mock giảm ETH
+
+            this.updateDashboardMock(currentUsdc, currentEth);
+        }
+    }
+    private updateDashboardMock(usdc: number, eth: number) {
+        this.options?.onUpdate?.({
+            tradeCount: this.tradeCount,
+            totalVolumeUsd: this.totalVolumeUsd,
+            volumeByPair: this.volumeByPair,
+            usdc,                         // số dư hiện tại
+            eth,                          // số dư hiện tại
+            usdcInitial: this.initialUsdcBalance,  // số dư ban đầu
+            ethInitial: this.ethBalance            // số dư ban đầu
+        });
+    }
+    private async runRealBot() {
+        // ===== Lấy USDC và ETH thật =====
+        this.initialUsdcBalance = Number(ethers.formatUnits(await this.usdc.balanceOf(this.wallet.address), 6));
+        await this.checkEthBalance();
+        await this.approveUsdc();
+        // update dashboard lần đầu
+        await this.updateDashboard();
+        while (this.running) {
             try {
-                await this.tradePairsLoop();
+                await this.tradePairsLoop(); // mở/đóng trade thật
+                // update dashboard realtime
+                await this.updateDashboard();
             } catch (err) {
                 console.error('Error / revert, retry...', err);
                 await this.sleep(BOT_CONFIG.retryDelayMs);
             }
         }
     }
+
     // ===== Mở tất cả các cặp đồng thời =====
     private async tradePairsLoop() {
         let tradePromises = OSTIUM_PAIRS.map(pair => this.tradePair(pair));
@@ -64,13 +135,11 @@ export class OstiumVolumeBot {
     private async tradePair(pair: { id: number; name: string; maxLeverage: number }) {
         let collateralWei = ethers.parseUnits(BOT_CONFIG.collateralUsd.toString(), 6);
         let leverage = pair.maxLeverage;
-
         console.log(` TRADING ${pair.name} | ${leverage}x`);
-
         try {
             // ===== OPEN LONG =====
             let tradeId = await this.executeWithRetryTx(async () => {
-                let gasEstimate = await this.contract.estimateGas('openTrade',pair.id, true, collateralWei, leverage, 0);
+                let gasEstimate = await this.contract.estimateGas('openTrade', pair.id, true, collateralWei, leverage, 0);
                 let tx = await this.contract.openTrade(pair.id, true, collateralWei, leverage, 0, {
                     gasLimit: gasEstimate * 120n / 100n
                 });
@@ -93,7 +162,7 @@ export class OstiumVolumeBot {
 
             // ===== CLOSE TRADE =====
             await this.executeWithRetryTx(async () => {
-                let gasEstimate = await this.contract.estimateGas('closeTrade',tradeId);
+                let gasEstimate = await this.contract.estimateGas('closeTrade', tradeId);
                 let tx = await this.contract.closeTrade(tradeId, { gasLimit: gasEstimate * 120n / 100n });
                 await tx.wait();
             }, BOT_CONFIG.maxRetries, BOT_CONFIG.retryDelayMs);

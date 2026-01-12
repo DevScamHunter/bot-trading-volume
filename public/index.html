@@ -1,0 +1,76 @@
+<head>
+    <title>OSTIUM BOT Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <h1>OSTIUM BOT Dashboard</h1>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="label">Total Trades</div>
+            <div class="value" id="tradeCount">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Total Volume</div>
+            <div class="value" id="totalVolume">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">USDC</div>
+            <div class="value" id="usdc">0</div>
+            <div class="sub-value" id="usdcInitial">Start: 0</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">ETH</div>
+            <div class="value" id="eth">0</div>
+            <div class="sub-value" id="usdcInitial">Start: 0</div>
+        </div>
+    </div>
+
+
+    <h2>Pairs</h2>
+    <div class="pairs" id="pairsContainer"></div>
+
+    <script>
+        const tradeCountEl = document.getElementById('tradeCount');
+        const totalVolumeEl = document.getElementById('totalVolume');
+        const usdcEl = document.getElementById('usdc');
+        const ethEl = document.getElementById('eth');
+        const usdcInitialEl = document.getElementById('usdcInitial');
+        const ethInitialEl = document.getElementById('ethInitial');
+        const pairsContainer = document.getElementById('pairsContainer');
+
+        ws.onmessage = (msg) => {
+            const { type, data } = JSON.parse(msg.data);
+            if (type === 'update') {
+                tradeCountEl.textContent = data.tradeCount;
+                totalVolumeEl.textContent = `$${data.totalVolumeUsd}`;
+                usdcEl.textContent = `$${data.usdc}`;
+                ethEl.textContent = `${data.eth} ETH`;
+
+                // hiện luôn số dư ban đầu
+                usdcInitialEl.textContent = `Start: $${data.usdcInitial}`;
+                ethInitialEl.textContent = `Start: ${data.ethInitial} ETH`;
+
+                // render từng cặp
+                pairsContainer.innerHTML = '';
+                for (const pair in data.volumeByPair) {
+                    const div = document.createElement('div');
+                    div.className = 'pair-card';
+
+                    const name = document.createElement('div');
+                    name.className = 'pair-name';
+                    name.textContent = pair;
+
+                    const vol = document.createElement('div');
+                    vol.className = 'pair-volume up'; // mock up
+                    vol.textContent = `$${data.volumeByPair[pair]}`;
+
+                    div.appendChild(name);
+                    div.appendChild(vol);
+                    pairsContainer.appendChild(div);
+                }
+            }
+        };
+    </script>
+</body>

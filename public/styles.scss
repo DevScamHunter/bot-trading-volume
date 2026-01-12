@@ -1,0 +1,99 @@
+$bg-color: #121212;
+$text-color: #00ff90;
+$accent-color: #00bfff;
+$pair-up-color: #0f0;
+$pair-down-color: #f00;
+$card-bg: #1e1e1e;
+$border-radius: 8px;
+$padding: 16px;
+
+body {
+  font-family: 'Roboto Mono', monospace;
+  background-color: $bg-color;
+  color: $text-color;
+  margin: 0;
+  padding: 20px;
+}
+
+h1 {
+  color: $accent-color;
+  font-size: 2rem;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.stats {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+
+  .stat-card {
+    background-color: $card-bg;
+    border-radius: $border-radius;
+    padding: $padding;
+    min-width: 180px;
+    flex: 1 1 180px;
+    text-align: center;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    transition: transform 0.2s ease;
+
+    &:hover {
+      transform: scale(1.05);
+    }
+
+    .label {
+      font-size: 0.9rem;
+      color: lighten($text-color, 30%);
+    }
+
+    .value {
+      font-size: 1.5rem;
+      font-weight: bold;
+      margin-top: 4px;
+    }
+  }
+}
+
+.pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .pair-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: $card-bg;
+    border-radius: $border-radius;
+    padding: $padding;
+    box-shadow: 0 0 8px rgba(0,0,0,0.3);
+    transition: background 0.2s ease;
+
+    &:hover {
+      background-color: darken($card-bg, 5%);
+    }
+
+    .pair-name {
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+
+    .pair-volume {
+      font-size: 1.1rem;
+      &.up {
+        color: $pair-up-color;
+        animation: pulse 1s infinite;
+      }
+      &.down {
+        color: $pair-down-color;
+      }
+    }
+  }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
