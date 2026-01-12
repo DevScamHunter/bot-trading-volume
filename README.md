@@ -32,6 +32,7 @@ npm run dev
 Tạo file `.env` (không push lên GitHub):
 
 ```env
-PRIVATE_KEY=private_key_cua_ban
 ARB_RPC=https://arb1.arbitrum.io/rpc
-OSTIUM_CONTRACT=0xDiaChiContractCuaOstium
+PRIVATE_KEY=0xYOUR_PRIVATE_KEY_HERE
+OSTIUM_CONTRACT=0x6D0bA1f9996DBD8885827e1b2e8f6593e7702411
+PORT=3000
