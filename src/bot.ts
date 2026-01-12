@@ -36,23 +36,28 @@ export class OstiumVolumeBot {
     async start() {
         console.log(' OSTIUM LONG VOLUME BOT STARTED');
 
-        // ===== USDC ban đầu =====
-        this.initialUsdcBalance = Number(ethers.formatUnits(await this.usdc.balanceOf(this.wallet.address), 6));
-        console.log(' Before USDC balance:', this.initialUsdcBalance);
+        // ===== Lấy USDC ban đầu =====
+        this.initialUsdcBalance = Number(
+            ethers.formatUnits(await this.usdc.balanceOf(this.wallet.address), 6)
+        );
+        console.log('USDC ban đầu:', this.initialUsdcBalance);
 
         await this.checkEthBalance();
         await this.approveUsdc();
 
         while (this.running) {
             try {
-                for (let pair of OSTIUM_PAIRS) {
-                    await this.tradePair(pair);
-                }
+                await this.tradePairsLoop();
             } catch (err) {
                 console.error('Error / revert, retry...', err);
                 await this.sleep(BOT_CONFIG.retryDelayMs);
             }
         }
+    }
+    // ===== Mở tất cả các cặp đồng thời =====
+    private async tradePairsLoop() {
+        const tradePromises = OSTIUM_PAIRS.map(pair => this.tradePair(pair));
+        await Promise.all(tradePromises); // chạy cùng lúc 4 cặp
     }
 
     // ===== Trade a single pair =====
