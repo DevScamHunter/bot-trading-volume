@@ -56,44 +56,53 @@ export class OstiumVolumeBot {
     }
     // ===== Mở tất cả các cặp đồng thời =====
     private async tradePairsLoop() {
-        const tradePromises = OSTIUM_PAIRS.map(pair => this.tradePair(pair));
+        let tradePromises = OSTIUM_PAIRS.map(pair => this.tradePair(pair));
         await Promise.all(tradePromises); // chạy cùng lúc 4 cặp
     }
 
     // ===== Trade a single pair =====
     private async tradePair(pair: { id: number; name: string; maxLeverage: number }) {
-        let collateralWei = ethers.parseUnits(BOT_CONFIG.collateralUsd.toString(), 6); // USDC
+        let collateralWei = ethers.parseUnits(BOT_CONFIG.collateralUsd.toString(), 6);
         let leverage = pair.maxLeverage;
 
         console.log(` TRADING ${pair.name} | ${leverage}x`);
 
-        // ===== OPEN LONG =====
-        let openTxGas = await this.contract.estimateGas('openTrade', pair.id, true, collateralWei, leverage, 0);
-        let openTx = await this.contract.send('openTrade', pair.id, true, collateralWei, leverage, 0, { gasLimit: openTxGas * 120n / 100n });
-        let receipt = await openTx.wait();
-        let tradeId = this.extractTradeId(receipt);
+        try {
+            // ===== OPEN LONG =====
+            let tradeId = await this.executeWithRetryTx(async () => {
+                let gasEstimate = await this.contract.estimateGas('openTrade',pair.id, true, collateralWei, leverage, 0);
+                let tx = await this.contract.openTrade(pair.id, true, collateralWei, leverage, 0, {
+                    gasLimit: gasEstimate * 120n / 100n
+                });
+                let receipt = await tx.wait();
+                let id = this.extractTradeId(receipt);
+                if (!id) throw new Error('Cannot extract tradeId');
+                return id;
+            }, BOT_CONFIG.maxRetries, BOT_CONFIG.retryDelayMs);
 
-        if (tradeId === null) {
-            console.error('Cannot extract tradeId, skip pair', pair.name);
-            return;
+            // ===== Update stats =====
+            this.tradeCount++;
+            let tradeVolume = BOT_CONFIG.collateralUsd * leverage;
+            this.totalVolumeUsd += tradeVolume;
+            this.volumeByPair[pair.name] = (this.volumeByPair[pair.name] || 0) + tradeVolume;
+
+            console.log(` LONG #${this.tradeCount} | ${pair.name} | Volume=${tradeVolume}$`);
+
+            // ===== HOLD =====
+            await this.sleep(BOT_CONFIG.holdTimeMs);
+
+            // ===== CLOSE TRADE =====
+            await this.executeWithRetryTx(async () => {
+                let gasEstimate = await this.contract.estimateGas('closeTrade',tradeId);
+                let tx = await this.contract.closeTrade(tradeId, { gasLimit: gasEstimate * 120n / 100n });
+                await tx.wait();
+            }, BOT_CONFIG.maxRetries, BOT_CONFIG.retryDelayMs);
+
+            console.log(` CLOSED ${pair.name} | tradeId=${tradeId}`);
+        } catch (err) {
+            console.error(` Trade failed for ${pair.name}:`, err);
+            // chỉ log, không throw → các cặp khác vẫn chạy
         }
-
-        this.tradeCount++;
-        let tradeVolume = BOT_CONFIG.collateralUsd * leverage;
-        this.totalVolumeUsd += tradeVolume;
-        this.volumeByPair[pair.name] = (this.volumeByPair[pair.name] || 0) + tradeVolume;
-
-        console.log(`LONG #${this.tradeCount} | ${pair.name} | Volume=${tradeVolume}$`);
-
-        // ===== HOLD =====
-        await this.sleep(BOT_CONFIG.holdTimeMs);
-
-        // ===== CLOSE TRADE =====
-        let closeTxGas = await this.contract.estimateGas('closeTrade', tradeId);
-        let closeTx = await this.contract.send('closeTrade', tradeId, { gasLimit: closeTxGas * 120n / 100n });
-        await closeTx.wait();
-
-        console.log(`CLOSED ${pair.name} | tradeId=${tradeId}`);
     }
 
     // ===== USDC Approval =====
@@ -113,12 +122,38 @@ export class OstiumVolumeBot {
         }
         return null;
     }
+    private async executeWithRetryTx<T>(
+        fn: () => Promise<T>,
+        retries = 3,
+        delayMs = 1000
+    ): Promise<T> {
+        let lastError: any;
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                return await fn();
+            } catch (err: any) {
+                lastError = err;
+
+                // Lọc lỗi không nên retry
+                let msg = (err.reason || err.message || '').toLowerCase();
+                if (msg.includes('insufficient funds') || msg.includes('balance')) {
+                    console.error(' Cannot retry due to insufficient balance:', err);
+                    throw err; // không retry nữa
+                }
+
+                console.warn(` Attempt ${attempt} failed, retrying in ${delayMs}ms...`, err);
+                await this.sleep(delayMs);
+                delayMs *= 2; // exponential backoff
+            }
+        }
+        throw new Error(` Max retries reached. Last error: ${lastError}`);
+    }
 
     async checkEthBalance() {
         let balance = await this.provider.getBalance(this.wallet.address);
         let eth = Number(ethers.formatEther(balance));
 
-        if (eth < 0.003) throw new Error(` Not enough ETH for gas: ${eth}`);
+        if (eth < 0.003) throw new Error(`Đéo đủ tiền : ${eth}`);
         console.log(` ETH balance: ${eth}`);
     }
 
