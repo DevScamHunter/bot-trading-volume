@@ -40,6 +40,7 @@ export class OstiumVolumeBot {
         );
 
     }
+    
     private async updateDashboard() {
         if (this.options?.onUpdate) {
             let usdcBalance = Number(ethers.formatUnits(await this.usdc.balanceOf(this.wallet.address), 6));
@@ -56,19 +57,24 @@ export class OstiumVolumeBot {
             });
         }
     }
+    
     async start() {
         console.log('OSTIUM LONG VOLUME BOT STARTED');
         let raw = await this.usdc.balanceOf(this.wallet.address);
+        let balanceWei = await this.provider.getBalance(this.wallet.address);
         let balance = Number(ethers.formatUnits(raw, 6));
+        let ethBalance = Number(ethers.formatEther(balanceWei));
+
+        console.log(`ETH balance: ${ethBalance}`);
         console.log(` USDC balance for ${this.wallet.address}: ${balance}`);
+        await this.runRealBot();
         
-        if (this.mock) {
-            // ===== MOCK =====
-            await this.runMockLoop();
-        } else {
-            // ===== REAL =====
-            await this.runRealBot();
-        }
+        // if (this.mock) {
+        //     // ===== MOCK =====
+        //     await this.runMockLoop();
+        // } else {
+        //     // ===== REAL =====
+        // }
     }
     private async runMockLoop() {
         // mock init
@@ -137,31 +143,52 @@ export class OstiumVolumeBot {
     // ===== Mở tất cả các cặp đồng thời =====
     private async tradePairsLoop() {
         for (let pair of OSTIUM_PAIRS) {
-            //  Nếu ETH thấp → nghỉ
-            let eth = Number(ethers.formatEther(await this.provider.getBalance(this.wallet.address)));
-            if (eth < BOT_CONFIG.minEthToTrade) {
-                console.warn(` ETH thấp (${eth}), pause bot`);
-                await this.sleep(10_000);
-                continue;
+            const check = await this.canTrade(pair);
+            if (!check.ok) {
+                console.warn(`Cannot trade ${pair.name}: ${check.reason}`);
+                continue; // skip pair này
             }
+
             await this.tradePair(pair);
-            await this.sleep(1500); // nghỉ cho gas nguội
+            await this.sleep(1500);
         }
     }
+    private async canTrade(pair: { id: number; name: string; maxLeverage: number }): Promise<{ok: boolean; reason?: string}> {
+        //  Check ETH
+        const ethBalance = Number(ethers.formatEther(await this.provider.getBalance(this.wallet.address)));
+        if (ethBalance < BOT_CONFIG.minEthToTrade) {
+            return { ok: false, reason: `ETH thấp (${ethBalance} < ${BOT_CONFIG.minEthToTrade})` };
+        }
+
+        //  Check USDC
+        const usdcBalance = Number(ethers.formatUnits(await this.usdc.balanceOf(this.wallet.address), 6));
+        if (usdcBalance < BOT_CONFIG.collateralUsd) {
+            return { ok: false, reason: `USDC thấp (${usdcBalance} < ${BOT_CONFIG.collateralUsd})` };
+        }
+
+        //  Check leverage
+        if (pair.maxLeverage < 1) {
+            return { ok: false, reason: `Leverage không hợp lệ (${pair.maxLeverage})` };
+        }
+
+        return { ok: true }; // OK để trade
+    }
+
 
     // ===== Trade a single pair =====
     private async tradePair(pair: { id: number; name: string; maxLeverage: number }) {
-        let collateralWei = ethers.parseUnits(
-            BOT_CONFIG.collateralUsd.toString(),
-            6
-        );
+        const check = await this.canTrade(pair);
+        if (!check.ok) {
+            console.warn(`Cannot trade ${pair.name}: ${check.reason}`);
+            return; // bỏ qua pair này
+        }
+        let collateralWei = ethers.parseUnits(BOT_CONFIG.collateralUsd.toString(), 6); 
+
         let leverage = pair.maxLeverage;
         console.log(` TRADING ${pair.name} | ${leverage}x`);
         try {
             // ===== OPEN LONG =====
-            let ORDER_TYPE_LIMIT = 1;
-            let oraclePrice = await this.contract.getPrice(pair.id);
-            // let limitPrice = oraclePrice * 10005n / 10000n;
+            let ORDER_TYPE_LIMIT = 0;
             let tradeId = await this.executeWithRetryTx(async () => {
                 await this.contract.openTrade.staticCall(
                     pair.id,
@@ -171,7 +198,7 @@ export class OstiumVolumeBot {
                     ORDER_TYPE_LIMIT,
                 );
 
-                //  estimate gas
+                 // estimate gas
                 let gasEstimate = await this.contract.openTrade.estimateGas(
                     pair.id,
                     true,
@@ -272,6 +299,78 @@ export class OstiumVolumeBot {
         }
         throw lastError;
     }
+    // ===================== FULL DIAGNOSE OPENTRADE =====================
+    async diagnoseOpenTrade(pair: { id: number; name: string; maxLeverage: number }) {
+        console.log('================== DIAGNOSE OPEN TRADE ==================');
+        console.log('Pair:', pair.name, 'ID:', pair.id);
+
+        // 1️⃣ Lấy balance & allowance
+        try {
+            const balanceRaw = await this.usdc.balanceOf(this.wallet.address);
+            const allowanceRaw = await this.usdc.allowance(this.wallet.address, process.env.OSTIUM_CONTRACT!);
+            const ethBalance = await this.provider.getBalance(this.wallet.address);
+
+            const balance = Number(ethers.formatUnits(balanceRaw, 6));
+            const allowance = Number(ethers.formatUnits(allowanceRaw, 6));
+            const eth = Number(ethers.formatEther(ethBalance));
+
+            console.log('[BALANCE CHECK]');
+            console.log('USDC balance:', balance);
+            console.log('USDC allowance:', allowance);
+            console.log('ETH balance:', eth);
+
+            if (balance < BOT_CONFIG.collateralUsd) {
+                console.warn(`⚠️ Balance < collateral (${BOT_CONFIG.collateralUsd}) → cannot trade`);
+            }
+            if (allowance < BOT_CONFIG.collateralUsd) {
+                console.warn(`⚠️ Allowance < collateral → must approve`);
+            }
+            if (eth < 0.0001) {
+                console.warn('⚠️ ETH too low for fees');
+            }
+        } catch (err) {
+            console.error('Error fetching balance/allowance:', err);
+        }
+
+        // 2️⃣ Log raw params
+        const pairId = BigInt(pair.id);
+        const isLong = true;
+        const collateral = ethers.parseUnits(BOT_CONFIG.collateralUsd.toString(), 6);
+        const leverage = BigInt(pair.maxLeverage);
+        const orderType = 0; // LIMIT / MARKET
+
+        console.log('[PARAMS]', { pairId, isLong, collateral: collateral.toString(), leverage, orderType });
+
+        // 3️⃣ estimateGas
+        try {
+            const gasEstimate = await this.contract.openTrade.estimateGas(pairId, isLong, collateral, leverage, orderType);
+            console.log('[estimateGas OK]', gasEstimate.toString());
+        } catch (err: any) {
+            console.error('❌ estimateGas FAILED', err);
+            if (err?.error?.data) console.log('revert data:', err.error.data);
+        }
+
+        // 4️⃣ staticCall
+        try {
+            await this.contract.openTrade.staticCall(pairId, isLong, collateral, leverage, orderType);
+            console.log('✅ staticCall OK → can send tx');
+        } catch (err: any) {
+            console.error('❌ staticCall FAILED', err);
+            if (err?.error?.data) console.log('revert data:', err.error.data);
+        }
+
+        // 5️⃣ Check common contract requires (manual check)
+        console.log('⚠️ Manual checks:');
+        console.log('- Pair disabled / paused?');
+        console.log('- Collateral < minTradeSize?');
+        console.log('- Leverage outside allowed range?');
+        console.log('- Market closed / outside trading hours?');
+        console.log('- User not registered / not approved?');
+
+        // 6️⃣ Optional: if you have hardhat/anvil fork
+        console.log('💡 Tip: use fork + trace to see exact require failing');
+        console.log('=======================================================');
+    }
 
     async checkEthBalance(): Promise<boolean> {
         let balanceWei = await this.provider.getBalance(this.wallet.address);
@@ -285,7 +384,7 @@ export class OstiumVolumeBot {
         }
         return true;
     }
-
+    
 
     // ===== Stop bot & full report =====
     async stopAndReport() {
