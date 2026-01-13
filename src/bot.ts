@@ -160,7 +160,7 @@ export class OstiumVolumeBot {
         try {
             // ===== OPEN LONG =====
             let ORDER_TYPE_LIMIT = 1;
-            // let oraclePrice = await this.contract.getPrice(pair.id);
+            let oraclePrice = await this.contract.getPrice(pair.id);
             // let limitPrice = oraclePrice * 10005n / 10000n;
             let tradeId = await this.executeWithRetryTx(async () => {
                 await this.contract.openTrade.staticCall(
@@ -181,18 +181,18 @@ export class OstiumVolumeBot {
                 );
 
                 //  gửi tx
-                // let tx = await this.contract.openTrade(
-                //     pair.id,
-                //     true,
-                //     collateralWei,
-                //     leverage,
-                //     ORDER_TYPE_LIMIT,
-                //     {
-                //         gasLimit: gasEstimate * 110n / 100n
-                //     }
-                // );
+                let tx = await this.contract.openTrade(
+                    pair.id,
+                    true,
+                    collateralWei,
+                    leverage,
+                    ORDER_TYPE_LIMIT,
+                    {
+                        gasLimit: gasEstimate * 110n / 100n
+                    }
+                );
 
-                // let receipt = await tx.wait();
+                let receipt = await tx.wait();
                 let id = this.extractTradeId(receipt);
                 if (!id) throw new Error('Cannot extract tradeId');
                 return id;
