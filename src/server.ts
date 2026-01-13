@@ -29,7 +29,7 @@ const bot = new OstiumVolumeBot(
             wss.clients.forEach(client => client.readyState === 1 && client.send(payload));
         }
     },
-    true // true = dummy data, false = real bot
+    false // true = dummy data, false = real bot
 );
 
 bot.start();

@@ -12,9 +12,3 @@ process.on('SIGTERM', async () => {
 });
 
 bot.start();
-
-console.log({
-  RPC: process.env.ARB_RPC,
-  PK: process.env.PRIVATE_KEY?.length,
-  CONTRACT: process.env.OSTIUM_CONTRACT
-});
